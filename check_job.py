@@ -5,7 +5,6 @@ import argparse
 from dotenv import load_dotenv
 from google import genai
 
-# 1. โหลด API Key และเตรียม Client
 load_dotenv()
 API_KEY = os.getenv("GOOGLE_API_KEY")
 if not API_KEY:
@@ -13,16 +12,14 @@ if not API_KEY:
 
 client = genai.Client(api_key=API_KEY)
 
-# ชื่อไฟล์มาตรฐานสำหรับเก็บ Job ID ล่าสุด
 DEFAULT_JOB_FILE = "latest_job_id.txt"
 
 def get_job_name(args):
     """ลำดับความสำคัญ: 1. Argument -> 2. File -> 3. Input"""
-    # 1. รับผ่าน Argument
+    
     if args.job:
         return args.job.strip()
     
-    # 2. รับผ่านไฟล์บันทึก (latest_job_id.txt)
     job_file = args.job_file
     if os.path.exists(job_file):
         with open(job_file, "r", encoding="utf-8") as f:
@@ -32,7 +29,6 @@ def get_job_name(args):
             if args.yes or input(f"   ต้องการตรวจสอบงานนี้หรือไม่? (Y/n): ").lower() in ('', 'y'):
                 return saved_id
 
-    # 3. ถามผู้ใช้โดยตรง
     return input("✍️  กรุณากรอก Job Name (เช่น batches/xxxx): ").strip()
 
 def get_job_status(job_name):
@@ -47,11 +43,10 @@ def get_job_status(job_name):
 def download_results(job, output_filename="batch_results.jsonl"):
     """ดาวน์โหลดผลลัพธ์และบันทึกไฟล์"""
     try:
-        # พยายามหาชื่อไฟล์ผลลัพธ์จาก Object Job
         result_file_name = None
         if hasattr(job, 'output_files') and job.output_files:
              result_file_name = job.output_files[0].name
-        elif hasattr(job, 'dest') and hasattr(job.dest, 'file_name'): # Fallback สำหรับบาง version
+        elif hasattr(job, 'dest') and hasattr(job.dest, 'file_name'):
              result_file_name = job.dest.file_name
 
         if not result_file_name:
@@ -106,10 +101,8 @@ def main():
             if args.download:
                 content = download_results(job)
                 preview_content(content)
-                
-                # ลบไฟล์ ID เมื่อเสร็จสิ้นภารกิจ (Optional)
+            
                 if os.path.exists(args.job_file):
-                    # os.remove(args.job_file) # เปิดบรรทัดนี้ถ้าต้องการลบไฟล์ ID หลังโหลดเสร็จ
                     pass
             break
         
@@ -120,7 +113,6 @@ def main():
             break
             
         else:
-            # ยังไม่เสร็จ (CREATING, ACTIVE)
             if not args.wait:
                 print("⏳ งานยังไม่เสร็จ (ใช้ --wait หากต้องการรอ)")
                 break
@@ -129,5 +121,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
