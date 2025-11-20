@@ -5,6 +5,7 @@ import argparse
 from dotenv import load_dotenv
 from google import genai
 
+# โหลดตัวแปรสภาพแวดล้อม
 load_dotenv()
 API_KEY = os.getenv("GOOGLE_API_KEY")
 if not API_KEY:
@@ -12,26 +13,35 @@ if not API_KEY:
 
 client = genai.Client(api_key=API_KEY)
 
+# ชื่อไฟล์มาตรฐานสำหรับเก็บ Job ID ล่าสุด (เชื่อมโยงกับ main.py)
 DEFAULT_JOB_FILE = "latest_job_id.txt"
 
 def get_job_name(args):
-    """ลำดับความสำคัญ: 1. Argument -> 2. File -> 3. Input"""
+    """
+    The Selector Logic:
+    ลำดับความสำคัญ: 1. Argument -> 2. File -> 3. Input
+    """
     
+    # 1. รับผ่าน Argument (--job)
     if args.job:
         return args.job.strip()
     
+    # 2. รับผ่านไฟล์บันทึก (latest_job_id.txt)
     job_file = args.job_file
     if os.path.exists(job_file):
         with open(job_file, "r", encoding="utf-8") as f:
             saved_id = f.read().strip()
         if saved_id:
             print(f"📂 พบ Job ID จากไฟล์ '{job_file}': {saved_id}")
+            # ถ้ามี flag --yes ให้ข้ามการถาม
             if args.yes or input(f"   ต้องการตรวจสอบงานนี้หรือไม่? (Y/n): ").lower() in ('', 'y'):
                 return saved_id
 
+    # 3. ถามผู้ใช้โดยตรง (Interactive Mode)
     return input("✍️  กรุณากรอก Job Name (เช่น batches/xxxx): ").strip()
 
 def get_job_status(job_name):
+    """ตรวจสอบสถานะปัจจุบันจาก Google Cloud"""
     try:
         job = client.batches.get(name=job_name)
         state = job.state.name
@@ -41,9 +51,10 @@ def get_job_status(job_name):
         return None, "UNKNOWN"
 
 def download_results(job, output_filename="batch_results.jsonl"):
-    """ดาวน์โหลดผลลัพธ์และบันทึกไฟล์"""
+    """ดาวน์โหลดผลลัพธ์และบันทึกไฟล์ (The Materialization)"""
     try:
         result_file_name = None
+        # พยายามหาชื่อไฟล์ผลลัพธ์ (รองรับความเปลี่ยนแปลงของ SDK)
         if hasattr(job, 'output_files') and job.output_files:
              result_file_name = job.output_files[0].name
         elif hasattr(job, 'dest') and hasattr(job.dest, 'file_name'):
@@ -51,7 +62,7 @@ def download_results(job, output_filename="batch_results.jsonl"):
 
         if not result_file_name:
             print("⚠️ ไม่พบชื่อไฟล์ผลลัพธ์ในข้อมูล Job")
-            return
+            return None
 
         print(f"⬇️  กำลังดาวน์โหลด: {result_file_name}...")
         content = client.files.download(file=result_file_name)
@@ -66,6 +77,7 @@ def download_results(job, output_filename="batch_results.jsonl"):
         return None
 
 def preview_content(content_bytes, lines=2):
+    """แสดงตัวอย่างข้อมูล (The Glimpse)"""
     if not content_bytes: return
     print("\n--- 👁️ ตัวอย่างผลลัพธ์ (Preview) ---")
     try:
@@ -76,7 +88,7 @@ def preview_content(content_bytes, lines=2):
         print("   (ไม่สามารถแสดงตัวอย่าง JSON ได้)")
 
 def main():
-    parser = argparse.ArgumentParser(description="AGIOpg: The Retrieval Ritual")
+    parser = argparse.ArgumentParser(description="AGIOpg: The Retrieval Ritual (check_job)")
     parser.add_argument("--job", help="ระบุ Job ID โดยตรง")
     parser.add_argument("--job-file", default=DEFAULT_JOB_FILE, help=f"ไฟล์เก็บ ID (Default: {DEFAULT_JOB_FILE})")
     parser.add_argument("--wait", action="store_true", help="รอจนกว่างานจะเสร็จ (Polling Mode)")
@@ -93,6 +105,7 @@ def main():
 
     print(f"📡 เชื่อมต่อกับ: {job_name}")
 
+    # Loop การเฝ้ารอ (The Vigil)
     while True:
         job, state = get_job_status(job_name)
         print(f"   -> สถานะ: {state}")
@@ -102,7 +115,9 @@ def main():
                 content = download_results(job)
                 preview_content(content)
             
+                # หมายเหตุ: หากต้องการลบไฟล์ ID เมื่อเสร็จงาน ให้เปิดคอมเมนต์ด้านล่าง
                 if os.path.exists(args.job_file):
+                    # os.remove(args.job_file) 
                     pass
             break
         
@@ -113,8 +128,16 @@ def main():
             break
             
         else:
+            # กรณีงานยังไม่เสร็จ (CREATING, ACTIVE)
             if not args.wait:
                 print("⏳ งานยังไม่เสร็จ (ใช้ --wait หากต้องการรอ)")
+                break
+            print("   ...รอ 30 วินาที...")
+            time.sleep(30)
+
+if __name__ == "__main__":
+    main()
+
                 break
             print("   ...รอ 30 วินาที...")
             time.sleep(30)
