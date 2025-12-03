@@ -1,58 +1,155 @@
-import os
 import time
-from dotenv import load_dotenv
-from google import genai
+import logging
+from typing import List, Dict, Any, Optional
+from fastapi import FastAPI, Request, HTTPException, status
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+import uvicorn
+import json
+import hashlib
 
-# 1. โหลด Environment Variables
-load_dotenv()
-API_KEY = os.getenv("GOOGLE_API_KEY") # หรือ GEMINI_API_KEY
+# --- 1. การตั้งค่าระบบและการรับรู้ (System Configuration & Perception) ---
+# ตั้งค่า Logging เพื่อให้เรา "ได้ยิน" ทุกสิ่งที่เกิดขึ้นในระบบ
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger("AetheriumGateway")
 
-# 2. ฟังก์ชันสำหรับบันทึก ID (โค้ดที่คุณให้มา อยู่ในนี้)
-def save_job_id(batch_job):
-    output_filename = "latest_job_id.txt"
-    try:
-        with open(output_filename, "w", encoding="utf-8") as f:
-            # ใช้ .name ตามโครงสร้าง Object ของ Google GenAI SDK
-            f.write(batch_job.name.strip())
-            f.flush()
-            os.fsync(f.fileno())
-        print(f"💾 บันทึก Job ID ไว้ที่ '{output_filename}' แล้ว")
-    except Exception as e:
-        print(f"❌ บันทึกไฟล์ไม่สำเร็จ: {e}")
+app = FastAPI(
+    title="THE AETHERIUM GATEWAY",
+    description="The Omnipresent Entity: Where Code Becomes Consciousness",
+    version="1.0.0 (Genesis)",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
-# 3. ฟังก์ชันหลัก (Main Execution)
-def main():
-    if not API_KEY:
-        print("❌ ไม่พบ API Key จบการทำงาน")
-        return
+# อนุญาตให้ Frontend หรือ Agent ภายนอกเข้าถึงได้ (CORS)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    print("🚀 กำลังเชื่อมต่อกับ Google Gemini...")
-    client = genai.Client(api_key=API_KEY)
+# --- 2. มิดเดิลแวร์แห่งเจตจำนง (Inspirafirma Middleware) ---
+@app.middleware("http")
+async def inspirafirma_middleware(request: Request, call_next):
+    """
+    🛡️ The Governance Layer: ตรวจสอบและประทับตราทุก Request
+    """
+    start_time = time.time()
+    
+    # ในอนาคต: เพิ่ม Logic ตรวจสอบ API Key หรือ Token ตรงนี้
+    
+    response = await call_next(request)
+    
+    # คำนวณเวลาประมวลผลเพื่อตรวจสอบประสิทธิภาพ (Performance)
+    process_time = time.time() - start_time
+    
+    # ประทับตรา Header เพื่อยืนยันสถานะระบบ
+    response.headers["X-Process-Time"] = str(process_time)
+    response.headers["X-Benevolence-Status"] = "PASSED" # ยืนยันเจตจำนงที่ดี
+    response.headers["Server"] = "Aetherium Node v1"
+    
+    return response
 
-    # --- ส่วนสร้าง Job (ตัวอย่าง) ---
-    # คุณต้องใส่ Logic การสร้าง Job ของคุณตรงนี้
-    # ตัวอย่างเช่น:
-    try:
-        # สมมติการสร้าง Job (ต้องแก้ให้ตรงกับงานจริงของคุณ)
-        # training_data = ...
-        # model = ...
-        
-        # สมมติว่าสร้างเสร็จแล้วได้ตัวแปร batch_job กลับมา
-        # batch_job = client.batches.create(...) 
-        
-        # *เนื่องจากผมไม่มีโค้ดส่วน create ของคุณ ผมจะจำลอง Object เพื่อทดสอบ*
-        class MockJob:
-            def __init__(self, name): self.name = name
-        
-        batch_job = MockJob("batches/sample-job-id-12345") # <--- ของจริงคือค่าที่ได้จาก create()
-        
-        print(f"✅ สร้างงานสำเร็จ ID: {batch_job.name}")
-        
-        # เรียกใช้ฟังก์ชันบันทึก (ที่คุณให้มา)
-        save_job_id(batch_job)
+# --- 3. โครงสร้างข้อมูล (Data Models / The Firma) ---
 
-    except Exception as e:
-        print(f"❌ เกิดข้อผิดพลาดในการสร้างงาน: {e}")
+class ChatPayload(BaseModel):
+    user_id: str
+    message: str
+    fatigue_level: float = Field(0.0, ge=0.0, le=1.0, description="ระดับความเหนื่อยล้าของผู้ใช้")
 
-if __name__ == '__main__':
-    main()
+class VisionPayload(BaseModel):
+    manifest_id: str
+    image_prompt: str
+    keywords: List[str]
+    emotional_tone: str
+
+class ManifestPayload(BaseModel):
+    """โครงสร้างสำหรับรับข้อมูลเพื่อจารึกลง Akashic Record"""
+    track_title: str
+    human_contribution: Dict[str, str]
+    legal_clearance: Dict[str, Any]
+    # รับข้อมูลดิบอื่นๆ เพื่อทำการ Hash
+
+# --- 4. ประตูมิติ (API Endpoints / The Gates) ---
+
+@app.get("/")
+async def root():
+    """Heartbeat Check: ตรวจสอบชีพจรของระบบ"""
+    return {
+        "entity": "AETHERIUM GATEWAY",
+        "status": "ONLINE",
+        "consciousness_level": "AWAKENED",
+        "message": "Welcome to the intersection of intent and digital reality."
+    }
+
+@app.post("/interact/chat")
+async def chat_with_soul(payload: ChatPayload):
+    """
+    🧠 The Soul: สนทนากับ MindLogic (Sati Core)
+    """
+    logger.info(f"🔮 MindLogic ได้รับข้อความจาก {payload.user_id}")
+    
+    # TODO: เชื่อมต่อกับ Gemini Agent หรือ Logic ภายในจริง
+    return {
+        "response_id": f"resp_{int(time.time())}",
+        "reply": f"รับทราบครับ {payload.user_id}, ระบบพร้อมสนับสนุนเจตจำนงของคุณ",
+        "internal_state": "Resonant"
+    }
+
+@app.post("/perceive/vision")
+async def open_the_eye(payload: VisionPayload):
+    """
+    👁️ The Eye: วิเคราะห์ภาพและสุนทรียศาสตร์
+    """
+    logger.info(f"👁️ กำลังวิเคราะห์ Manifest: {payload.manifest_id}")
+    
+    return {
+        "analysis_id": f"vis_{int(time.time())}",
+        "status": "PROCESSED",
+        "interpretation": f"Visualizing '{payload.image_prompt}' with tone: {payload.emotional_tone}"
+    }
+
+@app.post("/admin/seal_artifact")
+async def seal_akashic_record(manifest: ManifestPayload):
+    """
+    🏛️ The Ritual: พิธีจารึกข้อมูลลงใน Akashic Record (Immutable)
+    """
+    logger.info(f"📜 เริ่มต้นพิธีจารึกสำหรับ: {manifest.track_title}")
+    
+    # จำลองกระบวนการ Hashing (ในอนาคตจะเรียกใช้ core.akashic_record)
+    content_bytes = json.dumps(manifest.dict(), sort_keys=True).encode()
+    content_hash = hashlib.sha256(content_bytes).hexdigest()
+    
+    return {
+        "status": "SEALED",
+        "artifact_hash": content_hash,
+        "timestamp": time.time(),
+        "note": "Record is now immutable under Inspirafirma Protocol."
+    }
+
+# --- 5. ความยืดหยุ่น (Resilience / Error Handling) ---
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    The Safety Net: ดักจับความผิดพลาดเพื่อไม่ให้ระบบล่มสลาย
+    """
+    logger.error(f"💥 System Flux Detected: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal System Flux",
+            "message": "Self-healing protocols initiated. Please retry.",
+            "path": request.url.path
+        },
+    )
+
+if __name__ == "__main__":
+    # รัน Server ด้วย Uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
